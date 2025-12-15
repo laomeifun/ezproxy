@@ -1,7 +1,10 @@
-FROM alpine:latest
+FROM ghcr.io/sagernet/sing-box:v1.12.13
 
 LABEL maintainer="sing-box-auto-deploy"
 LABEL description="Auto-deploy sing-box with VLESS-Reality, AnyTLS, Hysteria2, TUIC V5"
+
+# Switch to root for installation
+USER root
 
 # Install dependencies
 RUN apk add --no-cache \
@@ -24,24 +27,6 @@ RUN mkdir -p /etc/sing-box \
     /var/lib/sing-box \
     /app
 
-# Download and install sing-box 1.12.0+ (supports anytls)
-ARG SINGBOX_VERSION=1.12.13
-RUN ARCH=$(uname -m) && \
-    case "${ARCH}" in \
-        x86_64|amd64) ARCH="amd64" ;; \
-        aarch64|arm64) ARCH="arm64" ;; \
-        armv7l) ARCH="armv7" ;; \
-        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
-    esac && \
-    echo "Downloading sing-box v${SINGBOX_VERSION} for ${ARCH}..." && \
-    curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-${ARCH}.tar.gz" \
-    -o /tmp/sing-box.tar.gz && \
-    tar -xzf /tmp/sing-box.tar.gz -C /tmp && \
-    mv /tmp/sing-box-${SINGBOX_VERSION}-linux-${ARCH}/sing-box /usr/local/bin/ && \
-    chmod +x /usr/local/bin/sing-box && \
-    rm -rf /tmp/* && \
-    sing-box version
-
 # Copy entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
@@ -61,6 +46,9 @@ ENV REALITY_PORTS="" \
 
 # UUID (empty = auto-generate)
 ENV UUID=""
+
+# Custom domain (empty = use sslip.io auto-generated domain)
+ENV CUSTOM_DOMAIN=""
 
 # Reality settings
 ENV REALITY_SERVER_NAME="" \

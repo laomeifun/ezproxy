@@ -82,6 +82,7 @@ docker run -d \
 | `UUID` | 自动生成 | 用户 UUID |
 | `REALITY_SERVER_NAME` | 随机选择 | Reality 伪装域名 |
 | `REALITY_SERVER_PORT` | `443` | Reality 伪装端口 |
+| `CUSTOM_DOMAIN` | 空 (使用 sslip.io) | 自定义 TLS 域名 |
 | `HYSTERIA2_UP_MBPS` | `100` | Hysteria2 上传带宽 (Mbps) |
 | `HYSTERIA2_DOWN_MBPS` | `100` | Hysteria2 下载带宽 (Mbps) |
 | `TUIC_CONGESTION` | `bbr` | TUIC 拥塞控制算法 (bbr/cubic/new_reno) |
@@ -143,7 +144,14 @@ docker run -d \
 ./deploy.sh up --no-anytls --no-tuic
 ```
 
-### 示例 6：使用 Docker Compose 自定义
+### 示例 6：使用自定义域名
+
+```bash
+# 使用自定义域名（需要将域名解析到服务器 IP）
+./deploy.sh up --domain proxy.example.com
+```
+
+### 示例 7：使用 Docker Compose 自定义
 
 编辑 `docker-compose.yaml`：
 
@@ -159,6 +167,7 @@ services:
       - HYSTERIA2_PORTS=10000
       - UUID=your-custom-uuid
       - REALITY_SERVER_NAME=www.microsoft.com
+      - CUSTOM_DOMAIN=proxy.example.com  # 可选：自定义域名
 ```
 
 然后运行：
@@ -208,17 +217,20 @@ docker-compose up -d
          DEPLOYMENT COMPLETE
 ==============================================
 
-Server IP: 1.2.3.4
+Server: 1.2.3.4
 UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+TLS Domain: 1-2-3-4.sslip.io (sslip.io auto)
 
 === VLESS-Reality-Vision ===
-Server Name: www.microsoft.com
+Server: 1.2.3.4
+Server Name (SNI): www.microsoft.com
 Public Key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Short ID: xxxxxxxxxxxxxxxx
 Ports: 12345
 
 === Hysteria2 ===
-Domain: 1-2-3-4.sslip.io
+Server: 1.2.3.4
+SNI: 1-2-3-4.sslip.io
 Ports: 23456
 Up/Down: 100/100 Mbps
 
@@ -264,7 +276,15 @@ services:
 
 - **VLESS-Reality**: 不需要真实证书，使用 Reality 协议
 - **AnyTLS/Hysteria2/TUIC**: 自动通过 `IP.sslip.io` + Let's Encrypt 获取证书
+- 如果设置了 `CUSTOM_DOMAIN`，则使用自定义域名获取证书
 - 如果 Let's Encrypt 获取失败，会自动生成自签名证书
+
+### 关于域名显示
+
+- **Server**: 服务器的实际 IP 地址，客户端连接时使用此地址
+- **SNI**: TLS 握手时使用的服务器名称指示，用于证书验证
+- 默认情况下 SNI 使用 sslip.io 格式（如 `1-2-3-4.sslip.io`）
+- 可通过 `CUSTOM_DOMAIN` 环境变量设置自定义域名
 
 ## 故障排除
 

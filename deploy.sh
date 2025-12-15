@@ -41,6 +41,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --uuid UUID           Set custom UUID"
+    echo "  --domain DOMAIN       Set custom domain for TLS (instead of sslip.io)"
     echo "  --reality-port PORT   Set Reality port(s), comma-separated"
     echo "  --anytls-port PORT    Set AnyTLS port(s), comma-separated"
     echo "  --hy2-port PORT       Set Hysteria2 port(s), comma-separated"
@@ -56,6 +57,7 @@ usage() {
     echo "Examples:"
     echo "  $0 up                                  # Start with all defaults (random ports)"
     echo "  $0 up --uuid my-custom-uuid            # Start with custom UUID"
+    echo "  $0 up --domain proxy.example.com       # Use custom domain for TLS"
     echo "  $0 up --reality-port 443 --hy2-port 8443"
     echo "  $0 up --only-reality --reality-port 443,444,445"
     echo "  $0 logs -f                             # Follow logs"
@@ -65,6 +67,7 @@ usage() {
 # Default values
 COMMAND="up"
 UUID=""
+CUSTOM_DOMAIN=""
 REALITY_PORTS=""
 ANYTLS_PORTS=""
 HYSTERIA2_PORTS=""
@@ -83,6 +86,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --uuid)
             UUID="$2"
+            shift 2
+            ;;
+        --domain)
+            CUSTOM_DOMAIN="$2"
             shift 2
             ;;
         --reality-port)
@@ -169,6 +176,7 @@ ANYTLS_PORTS=${ANYTLS_PORTS}
 HYSTERIA2_PORTS=${HYSTERIA2_PORTS}
 TUIC_PORTS=${TUIC_PORTS}
 UUID=${UUID}
+CUSTOM_DOMAIN=${CUSTOM_DOMAIN}
 REALITY_SERVER_NAME=
 REALITY_SERVER_PORT=443
 HYSTERIA2_UP_MBPS=100

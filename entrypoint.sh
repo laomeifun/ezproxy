@@ -423,13 +423,22 @@ main() {
     fi
     log_info "Public IP: ${PUBLIC_IP}"
 
-    # Generate sslip.io domain
-    SSL_DOMAIN="${PUBLIC_IP//./-}.sslip.io"
-    if [[ "$PUBLIC_IP" == *":"* ]]; then
-        # IPv6 - replace colons with dashes
-        SSL_DOMAIN="${PUBLIC_IP//:/-}.sslip.io"
+    # Determine TLS domain - use custom domain if provided, otherwise sslip.io
+    if [[ -n "$CUSTOM_DOMAIN" ]]; then
+        TLS_DOMAIN="$CUSTOM_DOMAIN"
+        log_info "Using custom domain: ${TLS_DOMAIN}"
+    else
+        # Generate sslip.io domain as fallback
+        TLS_DOMAIN="${PUBLIC_IP//./-}.sslip.io"
+        if [[ "$PUBLIC_IP" == *":"* ]]; then
+            # IPv6 - replace colons with dashes
+            TLS_DOMAIN="${PUBLIC_IP//:/-}.sslip.io"
+        fi
+        log_info "Using sslip.io domain: ${TLS_DOMAIN}"
     fi
-    log_info "SSL Domain: ${SSL_DOMAIN}"
+
+    # Keep SSL_DOMAIN for backward compatibility
+    SSL_DOMAIN="$TLS_DOMAIN"
 
     # Generate or use existing UUID
     if [[ -z "$UUID" ]]; then
@@ -586,20 +595,13 @@ main() {
   "dns": {
     "servers": [
       {
-        "tag": "google",
-        "address": "tls://8.8.8.8",
-        "detour": "direct-out"
+        "tag": "google-dns",
+        "address": "https://8.8.8.8/dns-query",
+        "address_resolver": "local-dns"
       },
       {
-        "tag": "local",
-        "address": "local",
-        "detour": "direct-out"
-      }
-    ],
-    "rules": [
-      {
-        "outbound": "any",
-        "server": "local"
+        "tag": "local-dns",
+        "address": "local"
       }
     ]
   },
@@ -609,15 +611,12 @@ ${INBOUNDS}
   "outbounds": [
     {
       "type": "direct",
-      "tag": "direct-out"
+      "tag": "direct-out",
+      "domain_resolver": "local-dns"
     }
   ],
   "route": {
-    "rules": [
-      {
-        "action": "sniff"
-      }
-    ],
+    "default_domain_resolver": "local-dns",
     "final": "direct-out"
   }
 }
@@ -639,13 +638,19 @@ EOF
     echo "         DEPLOYMENT COMPLETE"
     echo "=============================================="
     echo ""
-    echo "Server IP: ${PUBLIC_IP}"
+    echo "Server: ${PUBLIC_IP}"
     echo "UUID: ${UUID}"
+    if [[ -n "$CUSTOM_DOMAIN" ]]; then
+        echo "TLS Domain: ${TLS_DOMAIN} (custom)"
+    else
+        echo "TLS Domain: ${TLS_DOMAIN} (sslip.io auto)"
+    fi
     echo ""
 
     if [[ "$ENABLE_REALITY" == "1" ]]; then
         echo "=== VLESS-Reality-Vision ==="
-        echo "Server Name: ${REALITY_SERVER_NAME}"
+        echo "Server: ${PUBLIC_IP}"
+        echo "Server Name (SNI): ${REALITY_SERVER_NAME}"
         echo "Public Key: ${REALITY_PUBLIC_KEY}"
         echo "Short ID: ${REALITY_SHORT_ID}"
         echo "Ports: ${REALITY_PORT_LIST}"
@@ -654,14 +659,16 @@ EOF
 
     if [[ "$ENABLE_ANYTLS" == "1" ]]; then
         echo "=== AnyTLS ==="
-        echo "Domain: ${SSL_DOMAIN}"
+        echo "Server: ${PUBLIC_IP}"
+        echo "SNI: ${TLS_DOMAIN}"
         echo "Ports: ${ANYTLS_PORT_LIST}"
         echo ""
     fi
 
     if [[ "$ENABLE_HYSTERIA2" == "1" ]]; then
         echo "=== Hysteria2 ==="
-        echo "Domain: ${SSL_DOMAIN}"
+        echo "Server: ${PUBLIC_IP}"
+        echo "SNI: ${TLS_DOMAIN}"
         echo "Ports: ${HYSTERIA2_PORT_LIST}"
         echo "Up/Down: ${HYSTERIA2_UP_MBPS:-100}/${HYSTERIA2_DOWN_MBPS:-100} Mbps"
         echo ""
@@ -669,7 +676,8 @@ EOF
 
     if [[ "$ENABLE_TUIC" == "1" ]]; then
         echo "=== TUIC V5 ==="
-        echo "Domain: ${SSL_DOMAIN}"
+        echo "Server: ${PUBLIC_IP}"
+        echo "SNI: ${TLS_DOMAIN}"
         echo "Ports: ${TUIC_PORT_LIST}"
         echo "Congestion: ${TUIC_CONGESTION:-bbr}"
         echo ""
@@ -690,12 +698,14 @@ EOF
     cat > /etc/sing-box/deployment_info.json <<EOFINFO
 {
   "server_ip": "${PUBLIC_IP}",
-  "ssl_domain": "${SSL_DOMAIN}",
+  "tls_domain": "${TLS_DOMAIN}",
+  "custom_domain": "${CUSTOM_DOMAIN:-}",
   "uuid": "${UUID}",
   "deployed_at": "$(date -Iseconds)",
   "protocols": {
     "reality": {
       "enabled": ${ENABLE_REALITY},
+      "server": "${PUBLIC_IP}",
       "server_name": "${REALITY_SERVER_NAME}",
       "server_port": ${REALITY_SERVER_PORT:-443},
       "public_key": "${REALITY_PUBLIC_KEY}",
@@ -705,19 +715,22 @@ EOF
     },
     "anytls": {
       "enabled": ${ENABLE_ANYTLS},
-      "domain": "${SSL_DOMAIN}",
+      "server": "${PUBLIC_IP}",
+      "sni": "${TLS_DOMAIN}",
       "ports": "${ANYTLS_PORT_LIST:-}"
     },
     "hysteria2": {
       "enabled": ${ENABLE_HYSTERIA2},
-      "domain": "${SSL_DOMAIN}",
+      "server": "${PUBLIC_IP}",
+      "sni": "${TLS_DOMAIN}",
       "up_mbps": ${HYSTERIA2_UP_MBPS:-100},
       "down_mbps": ${HYSTERIA2_DOWN_MBPS:-100},
       "ports": "${HYSTERIA2_PORT_LIST:-}"
     },
     "tuic": {
       "enabled": ${ENABLE_TUIC},
-      "domain": "${SSL_DOMAIN}",
+      "server": "${PUBLIC_IP}",
+      "sni": "${TLS_DOMAIN}",
       "congestion": "${TUIC_CONGESTION:-bbr}",
       "ports": "${TUIC_PORT_LIST:-}"
     }

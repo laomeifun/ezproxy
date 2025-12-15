@@ -58,6 +58,11 @@ services:
       # TUIC congestion control: bbr, cubic, new_reno
       - TUIC_CONGESTION=bbr
 
+      # Custom domain for TLS (optional)
+      # If not set, uses sslip.io auto-generated domain (IP-based)
+      # Example: example.com, proxy.mydomain.com
+      - CUSTOM_DOMAIN=
+
       # Timezone
       - TZ=UTC
 
@@ -113,3 +118,9 @@ services:
 #    environment:
 #      - REALITY_SERVER_NAME=www.microsoft.com
 #      - REALITY_SERVER_PORT=443
+#
+# 6. Custom domain for TLS (instead of sslip.io):
+#    environment:
+#      - CUSTOM_DOMAIN=proxy.example.com
+#    Note: You need to point your domain to the server IP
+#    and ensure Let's Encrypt can issue a certificate for it.

@@ -283,6 +283,8 @@ hysteria2://xxx@1.2.3.4:23456?...#Hysteria2-23456
 ```yaml
 services:
   sing-box:
+    # 如果 1Panel 证书/私钥权限较严格（例如仅 root 可读），建议加这一行：
+    user: "0:0"
     volumes:
       - ./data/tls:/etc/sing-box/tls
       - ./data/config:/etc/sing-box/conf

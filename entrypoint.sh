@@ -140,14 +140,39 @@ obtain_certificate() {
     # Ensure directory exists
     mkdir -p "${cert_dir}"
 
+    # If cert/key exist but are not readable, fail fast with a clear hint.
+    # This commonly happens when mounting 1Panel certs with restrictive permissions
+    # while the container runs as a non-root user.
+    if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ ! -r "${cert_dir}/${domain}.crt" ]]; then
+        log_error "Certificate exists but is not readable: ${cert_dir}/${domain}.crt"
+        log_error "Fix by running container as root (docker-compose: user: \"0:0\") or relaxing file permissions on the host."
+        return 1
+    fi
+    if [[ -f "${cert_dir}/${domain}.key" ]] && [[ ! -r "${cert_dir}/${domain}.key" ]]; then
+        log_error "Private key exists but is not readable: ${cert_dir}/${domain}.key"
+        log_error "Fix by running container as root (docker-compose: user: \"0:0\") or adjusting host file permissions/ownership."
+        return 1
+    fi
+
     # Check if certificate already exists and is valid
     if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ -f "${cert_dir}/${domain}.key" ]]; then
-        # Check if certificate is still valid (more than 7 days)
-        if openssl x509 -checkend 604800 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
-            log_info "Valid certificate already exists for ${domain}"
-            return 0
+        # Check if certificate is currently valid
+        if openssl x509 -checkend 0 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
+            # Prefer reusing an existing valid cert, especially when running in selfsigned mode
+            # or when cert/key paths may be mounted read-only.
+            if openssl x509 -checkend 604800 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
+                log_info "Valid certificate already exists for ${domain}"
+                return 0
+            fi
+
+            if [[ "${le_mode}" == "selfsigned" ]]; then
+                log_warn "Certificate exists and is currently valid but expires soon; LE_MODE=selfsigned so reusing existing certificate"
+                return 0
+            fi
+
+            log_warn "Existing certificate is expiring soon, attempting renewal..."
         else
-            log_warn "Existing certificate is expiring, renewing..."
+            log_warn "Existing certificate is expired or invalid, attempting renewal..."
         fi
     fi
 
@@ -185,6 +210,15 @@ obtain_certificate() {
     # Fallback: generate self-signed certificate if Let's Encrypt failed
     if [[ ! -f "${cert_dir}/${domain}.crt" ]] || [[ ! -f "${cert_dir}/${domain}.key" ]]; then
         log_warn "Generating self-signed certificate as fallback..."
+
+        # If target paths are mounted read-only, fail fast with a clear hint.
+        if { [[ -e "${cert_dir}/${domain}.crt" ]] && [[ ! -w "${cert_dir}/${domain}.crt" ]]; } || \
+           { [[ -e "${cert_dir}/${domain}.key" ]] && [[ ! -w "${cert_dir}/${domain}.key" ]]; }; then
+            log_error "Cannot write self-signed certificate to ${cert_dir}/${domain}.crt/.key (path is read-only)."
+            log_error "If you mounted external certs with ':ro', ensure the existing cert is valid and will be reused, or mount a writable directory for /etc/sing-box/tls."
+            return 1
+        fi
+
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
             -keyout "${cert_dir}/${domain}.key" \
             -out "${cert_dir}/${domain}.crt" \

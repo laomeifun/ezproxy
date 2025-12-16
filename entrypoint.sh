@@ -125,6 +125,16 @@ obtain_certificate() {
     local cert_dir="/etc/sing-box/tls"
     local cert_obtained=0
 
+    local le_mode="${LE_MODE:-auto}"
+    case "${le_mode}" in
+        auto|selfsigned|letsencrypt)
+            ;;
+        *)
+            log_warn "Unknown LE_MODE='${le_mode}', falling back to 'auto'"
+            le_mode="auto"
+            ;;
+    esac
+
     log_step "Obtaining SSL certificate for ${domain}..."
 
     # Ensure directory exists
@@ -142,19 +152,27 @@ obtain_certificate() {
     fi
 
     # Try Let's Encrypt with standalone mode (requires port 80)
-    log_info "Attempting to obtain Let's Encrypt certificate..."
-    if certbot certonly --standalone \
-        --non-interactive \
-        --agree-tos \
-        --register-unsafely-without-email \
-        --domain "${domain}" \
-        --preferred-challenges http \
-        --http-01-port 80 \
-        2>&1; then
-        cert_obtained=1
-        log_info "Let's Encrypt certificate obtained successfully"
+    if [[ "${le_mode}" != "selfsigned" ]]; then
+        log_info "Attempting to obtain Let's Encrypt certificate..."
+        if certbot certonly --standalone \
+            --non-interactive \
+            --agree-tos \
+            --register-unsafely-without-email \
+            --domain "${domain}" \
+            --preferred-challenges http \
+            --http-01-port 80 \
+            2>&1; then
+            cert_obtained=1
+            log_info "Let's Encrypt certificate obtained successfully"
+        else
+            if [[ "${le_mode}" == "letsencrypt" ]]; then
+                log_error "Let's Encrypt failed and LE_MODE=letsencrypt is set (no self-signed fallback)."
+                return 1
+            fi
+            log_warn "Let's Encrypt standalone failed (port 80 might be in use)"
+        fi
     else
-        log_warn "Let's Encrypt standalone failed (port 80 might be in use)"
+        log_info "LE_MODE=selfsigned set; skipping Let's Encrypt attempt"
     fi
 
     # Copy from Let's Encrypt location if obtained

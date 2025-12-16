@@ -53,6 +53,9 @@ ENV REUSE_CONFIG=1
 # Custom domain (empty = use sslip.io auto-generated domain)
 ENV CUSTOM_DOMAIN=""
 
+# Certificate obtain mode: auto (default), selfsigned (skip LE), letsencrypt (fail if LE fails)
+ENV LE_MODE=auto
+
 # Reality settings
 ENV REALITY_SERVER_NAME="" \
     REALITY_SERVER_PORT=443

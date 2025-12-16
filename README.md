@@ -320,6 +320,21 @@ services:
 - 如果设置了 `CUSTOM_DOMAIN`，则使用自定义域名获取证书
 - 如果 Let's Encrypt 获取失败，会自动生成自签名证书
 
+### Let's Encrypt 需要 80 端口
+
+本项目使用 `certbot --standalone` 做 HTTP-01 校验：
+
+- 需要宿主机 80/tcp 可被公网访问
+- 并且宿主机 80 端口不能被其它进程占用（例如 Nginx/1Panel/面板）
+
+如果你是“纯 Docker / 无 Web 服务”但发现 80 已被占用，有三种选择：
+
+1) 临时停掉占用 80 的服务，启动容器申请一次证书后再恢复
+2) 继续使用自动回退的自签名证书（分享链接里已默认带 `insecure/allowInsecure`）
+3) 设置 `LE_MODE=selfsigned` 直接跳过 Let's Encrypt 尝试，避免反复报错
+
+也可以设置 `LE_MODE=letsencrypt`：当 LE 失败时直接启动失败（不回退自签），便于你强制排查 80 端口/网络问题。
+
 ### 关于域名显示
 
 - **Server**: 服务器的实际 IP 地址，客户端连接时使用此地址

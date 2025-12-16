@@ -387,25 +387,39 @@ generate_share_link() {
     # URL encode the UUID for safety
     local encoded_uuid=$(urlencode "$uuid")
 
+    # Optional node name prefix (e.g. NAME_PREFIX=us1 -> us1-Reality-443)
+    local name_prefix="${NAME_PREFIX:-}"
+    if [[ -n "$name_prefix" && "$name_prefix" != *- ]]; then
+        name_prefix="${name_prefix}-"
+    fi
+
     case "$protocol" in
         "reality")
             local server_name=$(echo "$extra" | cut -d'|' -f1)
             local public_key=$(echo "$extra" | cut -d'|' -f2)
             local short_id=$(echo "$extra" | cut -d'|' -f3)
-            echo "vless://${encoded_uuid}@${server}:${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server_name}&fp=chrome&pbk=${public_key}&sid=${short_id}&type=tcp&headerType=none#Reality-${port}"
+            local node_name="${name_prefix}Reality-${port}"
+            local encoded_name=$(urlencode "$node_name")
+            echo "vless://${encoded_uuid}@${server}:${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server_name}&fp=chrome&pbk=${public_key}&sid=${short_id}&type=tcp&headerType=none#${encoded_name}"
             ;;
         "anytls")
             local domain=$(echo "$extra" | cut -d'|' -f1)
-            echo "anytls://${encoded_uuid}@${server}:${port}?security=tls&sni=${domain}&allowInsecure=1#AnyTLS-${port}"
+            local node_name="${name_prefix}AnyTLS-${port}"
+            local encoded_name=$(urlencode "$node_name")
+            echo "anytls://${encoded_uuid}@${server}:${port}?security=tls&sni=${domain}&allowInsecure=1#${encoded_name}"
             ;;
         "hysteria2")
             local domain=$(echo "$extra" | cut -d'|' -f1)
-            echo "hysteria2://${encoded_uuid}@${server}:${port}?sni=${domain}&alpn=h3&insecure=1#Hysteria2-${port}"
+            local node_name="${name_prefix}Hysteria2-${port}"
+            local encoded_name=$(urlencode "$node_name")
+            echo "hysteria2://${encoded_uuid}@${server}:${port}?sni=${domain}&alpn=h3&insecure=1#${encoded_name}"
             ;;
         "tuic")
             local domain=$(echo "$extra" | cut -d'|' -f1)
             local congestion=$(echo "$extra" | cut -d'|' -f2)
-            echo "tuic://${encoded_uuid}:${encoded_uuid}@${server}:${port}?sni=${domain}&congestion_control=${congestion}&alpn=h3&allow_insecure=1#TUIC-${port}"
+            local node_name="${name_prefix}TUIC-${port}"
+            local encoded_name=$(urlencode "$node_name")
+            echo "tuic://${encoded_uuid}:${encoded_uuid}@${server}:${port}?sni=${domain}&congestion_control=${congestion}&alpn=h3&allow_insecure=1#${encoded_name}"
             ;;
     esac
 }

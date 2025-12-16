@@ -86,6 +86,7 @@ docker run -d \
 | `HYSTERIA2_UP_MBPS` | `100` | Hysteria2 上传带宽 (Mbps) |
 | `HYSTERIA2_DOWN_MBPS` | `100` | Hysteria2 下载带宽 (Mbps) |
 | `TUIC_CONGESTION` | `bbr` | TUIC 拥塞控制算法 (bbr/cubic/new_reno) |
+| `NAME_PREFIX` | 空 | 分享链接里的节点名称前缀；支持写 `us1` 或 `us1-`，会生成 `us1-协议名称-端口`（如 `us1-Reality-443`） |
 
 ### Reality 可用伪装域名
 
@@ -159,6 +160,7 @@ docker run -d \
 services:
   sing-box:
     environment:
+      - NAME_PREFIX=us1  # 可选：分享链接节点名 -> us1-Reality-443 / us1-AnyTLS-8443 ...
       - ENABLE_REALITY=1
       - ENABLE_ANYTLS=0
       - ENABLE_HYSTERIA2=1

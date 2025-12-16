@@ -29,6 +29,10 @@ services:
       - ./data/letsencrypt:/etc/letsencrypt
 
     environment:
+      # Share link node name prefix (optional)
+      # Example: NAME_PREFIX=us1 (or us1-) -> us1-Reality-443 / us1-AnyTLS-8443 ...
+      - NAME_PREFIX=
+
       # Protocol enable flags (1=enable, 0=disable)
       # All protocols enabled by default
       - ENABLE_REALITY=1

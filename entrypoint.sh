@@ -137,36 +137,76 @@ obtain_certificate() {
 
     log_step "Obtaining SSL certificate for ${domain}..."
 
-    # Ensure directory exists
-    mkdir -p "${cert_dir}"
+    # Debug: show what exists in the tls directory
+    log_info "Checking TLS directory ${cert_dir}:"
+    ls -la "${cert_dir}/" 2>/dev/null || log_warn "Cannot list ${cert_dir}"
+
+    # Check for mounted certificate files (don't mkdir if files are already mounted)
+    local cert_path="${cert_dir}/${domain}.crt"
+    local key_path="${cert_dir}/${domain}.key"
+
+    # Debug: check file status
+    if [[ -e "${cert_path}" ]]; then
+        if [[ -f "${cert_path}" ]]; then
+            log_info "Certificate file exists: ${cert_path}"
+        elif [[ -d "${cert_path}" ]]; then
+            log_error "Certificate path is a DIRECTORY (not a file): ${cert_path}"
+            log_error "This usually happens when Docker creates a directory instead of mounting a file."
+            log_error "Check that the source file exists on the host before starting the container."
+            return 1
+        else
+            log_warn "Certificate path exists but is not a regular file: ${cert_path}"
+        fi
+    else
+        log_info "Certificate file does not exist: ${cert_path}"
+    fi
+
+    if [[ -e "${key_path}" ]]; then
+        if [[ -f "${key_path}" ]]; then
+            log_info "Key file exists: ${key_path}"
+        elif [[ -d "${key_path}" ]]; then
+            log_error "Key path is a DIRECTORY (not a file): ${key_path}"
+            log_error "This usually happens when Docker creates a directory instead of mounting a file."
+            log_error "Check that the source file exists on the host before starting the container."
+            return 1
+        else
+            log_warn "Key path exists but is not a regular file: ${key_path}"
+        fi
+    else
+        log_info "Key file does not exist: ${key_path}"
+    fi
+
+    # Ensure directory exists (only if not mounting individual files)
+    if [[ ! -d "${cert_dir}" ]]; then
+        mkdir -p "${cert_dir}"
+    fi
 
     # If cert/key exist but are not readable, fail fast with a clear hint.
-    # This commonly happens when mounting 1Panel certs with restrictive permissions
-    # while the container runs as a non-root user.
-    if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ ! -r "${cert_dir}/${domain}.crt" ]]; then
-        log_error "Certificate exists but is not readable: ${cert_dir}/${domain}.crt"
+    if [[ -f "${cert_path}" ]] && [[ ! -r "${cert_path}" ]]; then
+        log_error "Certificate exists but is not readable: ${cert_path}"
         log_error "Fix by running container as root (docker-compose: user: \"0:0\") or relaxing file permissions on the host."
         return 1
     fi
-    if [[ -f "${cert_dir}/${domain}.key" ]] && [[ ! -r "${cert_dir}/${domain}.key" ]]; then
-        log_error "Private key exists but is not readable: ${cert_dir}/${domain}.key"
+    if [[ -f "${key_path}" ]] && [[ ! -r "${key_path}" ]]; then
+        log_error "Private key exists but is not readable: ${key_path}"
         log_error "Fix by running container as root (docker-compose: user: \"0:0\") or adjusting host file permissions/ownership."
         return 1
     fi
 
     # Check if certificate already exists and is valid
-    if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ -f "${cert_dir}/${domain}.key" ]]; then
+    if [[ -f "${cert_path}" ]] && [[ -f "${key_path}" ]]; then
         # Check if files are read-only (likely mounted externally)
         local is_readonly=0
-        if [[ ! -w "${cert_dir}/${domain}.crt" ]] || [[ ! -w "${cert_dir}/${domain}.key" ]]; then
+        if [[ ! -w "${cert_path}" ]] || [[ ! -w "${key_path}" ]]; then
             is_readonly=1
+            log_info "Certificate files are read-only (mounted externally)"
         fi
 
         # Check if certificate is currently valid
-        if openssl x509 -checkend 0 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
+        if openssl x509 -checkend 0 -noout -in "${cert_path}" 2>/dev/null; then
             # Prefer reusing an existing valid cert, especially when running in selfsigned mode
             # or when cert/key paths may be mounted read-only.
-            if openssl x509 -checkend 604800 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
+            if openssl x509 -checkend 604800 -noout -in "${cert_path}" 2>/dev/null; then
                 log_info "Valid certificate already exists for ${domain}"
                 return 0
             fi
@@ -181,7 +221,7 @@ obtain_certificate() {
             # Certificate is expired or invalid
             if [[ "$is_readonly" -eq 1 ]]; then
                 log_error "Existing certificate is expired or invalid, but files are read-only (mounted externally)."
-                log_error "Please ensure the mounted certificate at ${cert_dir}/${domain}.crt is valid."
+                log_error "Please ensure the mounted certificate at ${cert_path} is valid."
                 log_error "Check with: openssl x509 -noout -dates -in /path/to/your/cert.pem"
                 return 1
             fi
@@ -220,33 +260,40 @@ obtain_certificate() {
 
     # Copy from Let's Encrypt location if obtained
     if [[ "$cert_obtained" -eq 1 ]] && [[ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
-        cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${cert_dir}/${domain}.crt"
-        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${cert_dir}/${domain}.key"
+        cp -f "/etc/letsencrypt/live/${domain}/fullchain.pem" "${cert_path}"
+        cp -f "/etc/letsencrypt/live/${domain}/privkey.pem" "${key_path}"
         log_info "Certificate copied to ${cert_dir}"
     fi
 
     # Fallback: generate self-signed certificate if Let's Encrypt failed
-    if [[ ! -f "${cert_dir}/${domain}.crt" ]] || [[ ! -f "${cert_dir}/${domain}.key" ]]; then
+    if [[ ! -f "${cert_path}" ]] || [[ ! -f "${key_path}" ]]; then
         log_warn "Generating self-signed certificate as fallback..."
 
-        # If target paths are mounted read-only, fail fast with a clear hint.
-        if { [[ -e "${cert_dir}/${domain}.crt" ]] && [[ ! -w "${cert_dir}/${domain}.crt" ]]; } || \
-           { [[ -e "${cert_dir}/${domain}.key" ]] && [[ ! -w "${cert_dir}/${domain}.key" ]]; }; then
-            log_error "Cannot write self-signed certificate to ${cert_dir}/${domain}.crt/.key (path is read-only)."
+        # If target paths are mounted read-only or are directories, fail fast with a clear hint.
+        if [[ -d "${cert_path}" ]] || [[ -d "${key_path}" ]]; then
+            log_error "Certificate/key paths are directories instead of files!"
+            log_error "This happens when Docker creates directories because the source files don't exist on the host."
+            log_error "Make sure the certificate files exist on the host BEFORE starting the container."
+            return 1
+        fi
+
+        if { [[ -e "${cert_path}" ]] && [[ ! -w "${cert_path}" ]]; } || \
+           { [[ -e "${key_path}" ]] && [[ ! -w "${key_path}" ]]; }; then
+            log_error "Cannot write self-signed certificate to ${cert_path}/.key (path is read-only)."
             log_error "If you mounted external certs with ':ro', ensure the existing cert is valid and will be reused, or mount a writable directory for /etc/sing-box/tls."
             return 1
         fi
 
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-            -keyout "${cert_dir}/${domain}.key" \
-            -out "${cert_dir}/${domain}.crt" \
+            -keyout "${key_path}" \
+            -out "${cert_path}" \
             -days 365 -nodes \
             -subj "/CN=${domain}" \
             -addext "subjectAltName=DNS:${domain}" \
             2>/dev/null || \
         openssl req -x509 -newkey rsa:2048 \
-            -keyout "${cert_dir}/${domain}.key" \
-            -out "${cert_dir}/${domain}.crt" \
+            -keyout "${key_path}" \
+            -out "${cert_path}" \
             -days 365 -nodes \
             -subj "/CN=${domain}" \
             2>/dev/null
@@ -254,11 +301,11 @@ obtain_certificate() {
     fi
 
     # Set proper permissions
-    chmod 600 "${cert_dir}/${domain}.key" 2>/dev/null || true
-    chmod 644 "${cert_dir}/${domain}.crt" 2>/dev/null || true
+    chmod 600 "${key_path}" 2>/dev/null || true
+    chmod 644 "${cert_path}" 2>/dev/null || true
 
     # Verify certificate files exist
-    if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ -f "${cert_dir}/${domain}.key" ]]; then
+    if [[ -f "${cert_path}" ]] && [[ -f "${key_path}" ]]; then
         log_info "Certificate ready for ${domain}"
         return 0
     else

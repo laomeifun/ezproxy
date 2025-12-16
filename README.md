@@ -345,6 +345,20 @@ ss -tlnp | grep <port>
 2. 检查防火墙设置
 3. 容器会自动回退到自签名证书
 
+### 容器一直重启 / DNS 校验失败
+
+如果日志里出现类似：
+
+- `address resolver not found: local-dns`
+
+说明旧版本生成的 `./data/config/config.json` 与当前 sing-box 版本不兼容。
+
+处理方式二选一：
+
+1) 删除旧配置并重新生成：删除 `./data/config/config.json` 后再启动
+
+2) 强制重新生成：设置 `REUSE_CONFIG=0` 启动一次，生成新配置后再改回 `REUSE_CONFIG=1`
+
 ### 查看详细日志
 
 ```bash

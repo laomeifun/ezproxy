@@ -440,7 +440,7 @@ main() {
     # Set REUSE_CONFIG=0 to force regeneration from environment variables.
     local reuse_config="${REUSE_CONFIG:-$REUSE_CONFIG_DEFAULT}"
     if [[ "${reuse_config}" != "0" ]] && [[ -f "${PERSIST_CONFIG}" ]]; then
-        log_info "Found persisted config at ${PERSIST_CONFIG}; reusing existing configuration"
+        log_info "Found persisted config at ${PERSIST_CONFIG}; attempting to reuse existing configuration"
 
         # Keep legacy paths for healthcheck/commands
         ln -sf "${PERSIST_CONFIG}" /etc/sing-box/config.json
@@ -451,8 +451,12 @@ main() {
             ln -sf "${PERSIST_INFO}" /etc/sing-box/deployment_info.json
         fi
 
-        log_step "Starting sing-box..."
-        exec sing-box run -c "${PERSIST_CONFIG}"
+        if sing-box check -c "${PERSIST_CONFIG}"; then
+            log_step "Starting sing-box..."
+            exec sing-box run -c "${PERSIST_CONFIG}"
+        else
+            log_warn "Persisted config validation failed; regenerating configuration from environment"
+        fi
     fi
 
     # Get public IP
@@ -634,31 +638,16 @@ main() {
     "level": "info",
     "timestamp": true
   },
-  "dns": {
-    "servers": [
-      {
-        "tag": "google-dns",
-        "address": "https://8.8.8.8/dns-query",
-        "address_resolver": "local-dns"
-      },
-      {
-        "tag": "local-dns",
-        "address": "local"
-      }
-    ]
-  },
   "inbounds": [
 ${INBOUNDS}
   ],
   "outbounds": [
     {
       "type": "direct",
-      "tag": "direct-out",
-      "domain_resolver": "local-dns"
+            "tag": "direct-out"
     }
   ],
   "route": {
-    "default_domain_resolver": "local-dns",
     "final": "direct-out"
   }
 }

@@ -156,6 +156,12 @@ obtain_certificate() {
 
     # Check if certificate already exists and is valid
     if [[ -f "${cert_dir}/${domain}.crt" ]] && [[ -f "${cert_dir}/${domain}.key" ]]; then
+        # Check if files are read-only (likely mounted externally)
+        local is_readonly=0
+        if [[ ! -w "${cert_dir}/${domain}.crt" ]] || [[ ! -w "${cert_dir}/${domain}.key" ]]; then
+            is_readonly=1
+        fi
+
         # Check if certificate is currently valid
         if openssl x509 -checkend 0 -noout -in "${cert_dir}/${domain}.crt" 2>/dev/null; then
             # Prefer reusing an existing valid cert, especially when running in selfsigned mode
@@ -165,14 +171,26 @@ obtain_certificate() {
                 return 0
             fi
 
-            if [[ "${le_mode}" == "selfsigned" ]]; then
-                log_warn "Certificate exists and is currently valid but expires soon; LE_MODE=selfsigned so reusing existing certificate"
+            if [[ "${le_mode}" == "selfsigned" ]] || [[ "$is_readonly" -eq 1 ]]; then
+                log_warn "Certificate exists and is currently valid but expires soon; reusing existing certificate (LE_MODE=${le_mode}, readonly=${is_readonly})"
                 return 0
             fi
 
             log_warn "Existing certificate is expiring soon, attempting renewal..."
         else
-            log_warn "Existing certificate is expired or invalid, attempting renewal..."
+            # Certificate is expired or invalid
+            if [[ "$is_readonly" -eq 1 ]]; then
+                log_error "Existing certificate is expired or invalid, but files are read-only (mounted externally)."
+                log_error "Please ensure the mounted certificate at ${cert_dir}/${domain}.crt is valid."
+                log_error "Check with: openssl x509 -noout -dates -in /path/to/your/cert.pem"
+                return 1
+            fi
+
+            if [[ "${le_mode}" == "selfsigned" ]]; then
+                log_warn "Existing certificate is expired or invalid; will regenerate self-signed certificate..."
+            else
+                log_warn "Existing certificate is expired or invalid, attempting renewal..."
+            fi
         fi
     fi
 

@@ -24,6 +24,12 @@ log_step() {
     echo -e "${BLUE}[STEP]${NC} $1"
 }
 
+PERSIST_DIR="/etc/sing-box/conf"
+PERSIST_CONFIG="${PERSIST_DIR}/config.json"
+PERSIST_SHARE_LINKS="${PERSIST_DIR}/share_links.txt"
+PERSIST_INFO="${PERSIST_DIR}/deployment_info.json"
+REUSE_CONFIG_DEFAULT=1
+
 # Reality server name options
 REALITY_DOMAINS=(
     "gateway.icloud.com"
@@ -428,6 +434,27 @@ generate_share_link() {
 main() {
     log_step "Starting sing-box auto-deployment..."
 
+    mkdir -p "${PERSIST_DIR}" 2>/dev/null || true
+
+    # By default, reuse persisted config if present.
+    # Set REUSE_CONFIG=0 to force regeneration from environment variables.
+    local reuse_config="${REUSE_CONFIG:-$REUSE_CONFIG_DEFAULT}"
+    if [[ "${reuse_config}" != "0" ]] && [[ -f "${PERSIST_CONFIG}" ]]; then
+        log_info "Found persisted config at ${PERSIST_CONFIG}; reusing existing configuration"
+
+        # Keep legacy paths for healthcheck/commands
+        ln -sf "${PERSIST_CONFIG}" /etc/sing-box/config.json
+        if [[ -f "${PERSIST_SHARE_LINKS}" ]]; then
+            ln -sf "${PERSIST_SHARE_LINKS}" /etc/sing-box/share_links.txt
+        fi
+        if [[ -f "${PERSIST_INFO}" ]]; then
+            ln -sf "${PERSIST_INFO}" /etc/sing-box/deployment_info.json
+        fi
+
+        log_step "Starting sing-box..."
+        exec sing-box run -c "${PERSIST_CONFIG}"
+    fi
+
     # Get public IP
     log_step "Detecting public IP..."
     PUBLIC_IP=$(get_public_ip)
@@ -600,7 +627,8 @@ main() {
     # Generate sing-box configuration
     log_step "Generating sing-box configuration..."
 
-    cat > /etc/sing-box/config.json <<EOF
+        umask 077
+        cat > "${PERSIST_CONFIG}" <<EOF
 {
   "log": {
     "level": "info",
@@ -638,13 +666,16 @@ EOF
 
     # Validate configuration
     log_step "Validating configuration..."
-    if sing-box check -c /etc/sing-box/config.json; then
+    if sing-box check -c "${PERSIST_CONFIG}"; then
         log_info "Configuration is valid"
     else
         log_error "Configuration validation failed"
-        cat /etc/sing-box/config.json
+        cat "${PERSIST_CONFIG}"
         exit 1
     fi
+
+    # Keep legacy path for healthcheck/commands
+    ln -sf "${PERSIST_CONFIG}" /etc/sing-box/config.json
 
     # Print share links
     echo ""
@@ -705,11 +736,12 @@ EOF
     echo "=============================================="
 
     # Save share links to file
-    echo -e "$SHARE_LINKS" > /etc/sing-box/share_links.txt
+    echo -e "$SHARE_LINKS" > "${PERSIST_SHARE_LINKS}"
+    ln -sf "${PERSIST_SHARE_LINKS}" /etc/sing-box/share_links.txt
 
     # Save complete deployment info to JSON file
     log_step "Saving deployment information..."
-    cat > /etc/sing-box/deployment_info.json <<EOFINFO
+        cat > "${PERSIST_INFO}" <<EOFINFO
 {
   "server_ip": "${PUBLIC_IP}",
   "tls_domain": "${TLS_DOMAIN}",
@@ -752,12 +784,14 @@ EOF
 }
 EOFINFO
 
+    ln -sf "${PERSIST_INFO}" /etc/sing-box/deployment_info.json
+
     log_info "Deployment info saved to /etc/sing-box/deployment_info.json"
     log_info "Share links saved to /etc/sing-box/share_links.txt"
 
     # Start sing-box
     log_step "Starting sing-box..."
-    exec sing-box run -c /etc/sing-box/config.json
+    exec sing-box run -c "${PERSIST_CONFIG}"
 }
 
 # Run main function

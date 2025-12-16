@@ -256,6 +256,45 @@ hysteria2://xxx@1.2.3.4:23456?...#Hysteria2-23456
 └── letsencrypt/      # Let's Encrypt 数据
 ```
 
+### 重启/升级镜像不改变当前配置（推荐做法）
+
+本项目的“自动生成”包含 UUID、端口、Reality 密钥等；如果每次启动都重新生成，这些就会变化。
+
+现在容器会把生成结果持久化到挂载卷（默认已在 `docker-compose.yaml` 里挂载）：
+
+- `./data/config/config.json`：sing-box 实际运行配置（含 Reality 私钥等敏感信息）
+- `./data/config/share_links.txt`：分享链接
+- `./data/config/deployment_info.json`：部署信息
+
+之后你 **重启容器 / 重新创建容器 / 升级基础镜像**，默认都会直接复用 `./data/config/config.json`，配置不会改变。
+
+如果你想“丢弃旧配置并按环境变量重新生成”，设置：
+
+- `REUSE_CONFIG=0`
+
+或者删除 `./data/config/config.json` 后再启动。
+
+### 使用已有证书（例如 1Panel）
+
+如果你已经在宿主机上有现成证书，建议直接挂载到容器期望的文件名：`/etc/sing-box/tls/<域名>.crt` 和 `/etc/sing-box/tls/<域名>.key`。
+
+示例（sslip.io 证书）：
+
+```yaml
+services:
+  sing-box:
+    volumes:
+      - ./data/tls:/etc/sing-box/tls
+      - ./data/config:/etc/sing-box/conf
+      - /opt/1panel/ssl/certs/47-245-31-69.sslip.io/fullchain.pem:/etc/sing-box/tls/47-245-31-69.sslip.io.crt:ro
+      - /opt/1panel/ssl/certs/47-245-31-69.sslip.io/privkey.pem:/etc/sing-box/tls/47-245-31-69.sslip.io.key:ro
+    environment:
+      - CUSTOM_DOMAIN=47-245-31-69.sslip.io
+      - REUSE_CONFIG=1
+```
+
+注意：如果你挂载成 `cert.pem/key.pem` 这类固定文件名，除非你自己提供的 `config.json` 引用了它们，否则不会被自动生成的配置使用。
+
 ## 网络模式
 
 默认使用 `host` 网络模式以获得最佳性能。如果需要使用 `bridge` 模式，请修改 `docker-compose.yaml`：

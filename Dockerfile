@@ -47,6 +47,9 @@ ENV REALITY_PORTS="" \
 # UUID (empty = auto-generate)
 ENV UUID=""
 
+# Reuse persisted config in /etc/sing-box/conf if present (1=reuse, 0=regenerate)
+ENV REUSE_CONFIG=1
+
 # Custom domain (empty = use sslip.io auto-generated domain)
 ENV CUSTOM_DOMAIN=""
 

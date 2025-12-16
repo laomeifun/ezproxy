@@ -41,6 +41,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --uuid UUID           Set custom UUID"
+    echo "  --name-prefix PREFIX  Set share link node name prefix (e.g. us1 or us1-)"
     echo "  --domain DOMAIN       Set custom domain for TLS (instead of sslip.io)"
     echo "  --reality-port PORT   Set Reality port(s), comma-separated"
     echo "  --anytls-port PORT    Set AnyTLS port(s), comma-separated"
@@ -57,6 +58,7 @@ usage() {
     echo "Examples:"
     echo "  $0 up                                  # Start with all defaults (random ports)"
     echo "  $0 up --uuid my-custom-uuid            # Start with custom UUID"
+    echo "  $0 up --name-prefix us1                # Share link names: us1-Reality-443 ..."
     echo "  $0 up --domain proxy.example.com       # Use custom domain for TLS"
     echo "  $0 up --reality-port 443 --hy2-port 8443"
     echo "  $0 up --only-reality --reality-port 443,444,445"
@@ -67,6 +69,7 @@ usage() {
 # Default values
 COMMAND="up"
 UUID=""
+NAME_PREFIX=""
 CUSTOM_DOMAIN=""
 REALITY_PORTS=""
 ANYTLS_PORTS=""
@@ -86,6 +89,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --uuid)
             UUID="$2"
+            shift 2
+            ;;
+        --name-prefix)
+            NAME_PREFIX="$2"
             shift 2
             ;;
         --domain)
@@ -167,6 +174,7 @@ ensure_directories() {
 generate_env() {
     cat > "$SCRIPT_DIR/.env" <<EOF
 # Auto-generated environment file
+NAME_PREFIX=${NAME_PREFIX}
 ENABLE_REALITY=${ENABLE_REALITY}
 ENABLE_ANYTLS=${ENABLE_ANYTLS}
 ENABLE_HYSTERIA2=${ENABLE_HYSTERIA2}
@@ -234,7 +242,9 @@ execute_command() {
             $COMPOSE_CMD ps
             ;;
         links)
-            if [[ -f "$SCRIPT_DIR/data/config/../share_links.txt" ]] || docker exec sing-box-auto cat /etc/sing-box/share_links.txt 2>/dev/null; then
+            if [[ -f "$SCRIPT_DIR/data/config/share_links.txt" ]]; then
+                cat "$SCRIPT_DIR/data/config/share_links.txt"
+            elif docker exec sing-box-auto cat /etc/sing-box/share_links.txt 2>/dev/null; then
                 :
             else
                 echo -e "${YELLOW}Share links not yet generated. Container might still be starting...${NC}"

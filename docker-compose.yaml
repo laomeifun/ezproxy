@@ -50,6 +50,9 @@ services:
       # UUID (leave empty for auto-generation)
       - UUID=
 
+      # Reuse persisted config in /etc/sing-box/conf if present (1=reuse, 0=regenerate)
+      - REUSE_CONFIG=1
+
       # Reality settings
       # Server name will be randomly selected from a list if not specified
       - REALITY_SERVER_NAME=

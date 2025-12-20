@@ -718,7 +718,14 @@ main() {
             if [[ "$port" == "50000" ]]; then
                 log_info "Setting up iptables for Hysteria2 port hopping (20000-45000 -> 50000)..."
                 if command -v iptables &> /dev/null; then
-                    iptables -t nat -A PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000 || log_warn "Failed to set iptables rule"
+                    # Remove existing rule first to prevent duplicates (idempotency)
+                    iptables -t nat -D PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000 2>/dev/null || true
+                    
+                    if iptables -t nat -A PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000; then
+                        log_info "iptables rule added successfully"
+                    else
+                        log_warn "Failed to set iptables rule"
+                    fi
                 else
                     log_warn "iptables not found, port hopping redirection might not work"
                 fi

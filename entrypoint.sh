@@ -700,15 +700,15 @@ main() {
                 hopping_ports="20000-45000"
             fi
 
-            # Generate IPv4 share link (use real SNI for Salamander obfs)
+            # Generate IPv4 share link (use www.bing.com as SNI for Salamander obfs)
             if [[ -n "$PUBLIC_IPV4" ]]; then
-                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${TLS_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "")
+                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "www.bing.com|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
             
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
-                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${TLS_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "-ipv6")
+                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "www.bing.com|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "-ipv6")
                 SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
             fi
 

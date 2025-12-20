@@ -426,7 +426,6 @@ build_hysteria2_inbound() {
       },
       "tls": {
         "enabled": true,
-        "server_name": "${domain}",
         "alpn": ["h3"],
         "certificate_path": "/etc/sing-box/tls/${domain}.crt",
         "key_path": "/etc/sing-box/tls/${domain}.key"

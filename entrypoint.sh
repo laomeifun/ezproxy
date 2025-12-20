@@ -688,15 +688,15 @@ main() {
             fi
             INBOUNDS="${INBOUNDS}${inbound}"
 
-            # Generate IPv4 share link
+            # Generate IPv4 share link (use bing.com as fake SNI for Salamander obfs)
             if [[ -n "$PUBLIC_IPV4" ]]; then
-                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}" "")
+                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "bing.com|${HYSTERIA2_OBFS_PASSWORD}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
             
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
-                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}" "-ipv6")
+                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "bing.com|${HYSTERIA2_OBFS_PASSWORD}" "-ipv6")
                 SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
             fi
 

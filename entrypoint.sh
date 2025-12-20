@@ -487,6 +487,8 @@ generate_share_link() {
         "hysteria2")
             local domain=$(echo "$extra" | cut -d'|' -f1)
             local obfs_password=$(echo "$extra" | cut -d'|' -f2)
+            local ports=$(echo "$extra" | cut -d'|' -f3)
+            
             local node_name="${name_prefix}-Hysteria2-${port}${suffix}"
             local encoded_name=$(urlencode "$node_name")
             # For IPv6 server, wrap in brackets
@@ -494,7 +496,12 @@ generate_share_link() {
             if [[ "$server" == *":"* ]]; then
                 server_addr="[${server}]"
             fi
-            echo "hysteria2://${encoded_uuid}@${server_addr}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}#${encoded_name}"
+            
+            local link="hysteria2://${encoded_uuid}@${server_addr}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}"
+            if [[ -n "$ports" ]]; then
+                link="${link}&mport=${ports}"
+            fi
+            echo "${link}#${encoded_name}"
             ;;
     esac
 }
@@ -687,15 +694,21 @@ main() {
             fi
             INBOUNDS="${INBOUNDS}${inbound}"
 
-            # Generate IPv4 share link (use bing.com as fake SNI for Salamander obfs)
+            # Determine port hopping range
+            local hopping_ports=""
+            if [[ "$port" == "50000" ]]; then
+                hopping_ports="20000-45000"
+            fi
+
+            # Generate IPv4 share link (use real SNI for Salamander obfs)
             if [[ -n "$PUBLIC_IPV4" ]]; then
-                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "bing.com|${HYSTERIA2_OBFS_PASSWORD}" "")
+                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${TLS_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
             
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
-                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "bing.com|${HYSTERIA2_OBFS_PASSWORD}" "-ipv6")
+                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${TLS_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "-ipv6")
                 SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
             fi
 

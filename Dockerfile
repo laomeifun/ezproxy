@@ -34,14 +34,14 @@ RUN chmod +x /app/entrypoint.sh
 # Environment variables with defaults (empty means auto-generate)
 # Protocol enable flags (1=enable, 0=disable, default all enabled)
 ENV ENABLE_REALITY=1 \
-    ENABLE_ANYTLS=1 \
+    ENABLE_ANYTLS=0 \
     ENABLE_HYSTERIA2=1 \
-    ENABLE_TUIC=1
+    ENABLE_TUIC=0
 
 # Ports (empty = random port between 10000-60000)
-ENV REALITY_PORTS="" \
+ENV REALITY_PORTS="443" \
     ANYTLS_PORTS="" \
-    HYSTERIA2_PORTS="" \
+    HYSTERIA2_PORTS="50000" \
     TUIC_PORTS=""
 
 # UUID (empty = auto-generate)
@@ -54,7 +54,7 @@ ENV REUSE_CONFIG=1
 ENV CUSTOM_DOMAIN=""
 
 # Certificate obtain mode: auto (default), selfsigned (skip LE), letsencrypt (fail if LE fails)
-ENV LE_MODE=auto
+ENV LE_MODE=selfsigned
 
 # Reality settings
 ENV REALITY_SERVER_NAME="" \

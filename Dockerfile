@@ -15,7 +15,8 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     socat \
-    certbot
+    certbot \
+    iptables
 
 # Set timezone
 ENV TZ=UTC

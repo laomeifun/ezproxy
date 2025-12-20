@@ -385,35 +385,6 @@ build_reality_inbound() {
 EOF
 }
 
-# Build inbound configuration for AnyTLS
-build_anytls_inbound() {
-    local port="$1"
-    local uuid="$2"
-    local domain="$3"
-    local tag="$4"
-
-    cat <<EOF
-    {
-      "type": "anytls",
-      "listen": "::",
-      "listen_port": ${port},
-      "tag": "${tag}",
-      "users": [
-        {
-          "password": "${uuid}",
-          "name": "anytls-user"
-        }
-      ],
-      "tls": {
-        "enabled": true,
-        "server_name": "${domain}",
-        "certificate_path": "/etc/sing-box/tls/${domain}.crt",
-        "key_path": "/etc/sing-box/tls/${domain}.key"
-      }
-    }
-EOF
-}
-
 # Build inbound configuration for Hysteria2
 build_hysteria2_inbound() {
     local port="$1"
@@ -421,7 +392,8 @@ build_hysteria2_inbound() {
     local domain="$3"
     local up_mbps="$4"
     local down_mbps="$5"
-    local tag="$6"
+    local obfs_password="$6"
+    local tag="$7"
 
     cat <<EOF
     {
@@ -437,39 +409,10 @@ build_hysteria2_inbound() {
       ],
       "up_mbps": ${up_mbps},
       "down_mbps": ${down_mbps},
-      "tls": {
-        "enabled": true,
-        "server_name": "${domain}",
-        "alpn": ["h3"],
-        "certificate_path": "/etc/sing-box/tls/${domain}.crt",
-        "key_path": "/etc/sing-box/tls/${domain}.key"
-      }
-    }
-EOF
-}
-
-# Build inbound configuration for TUIC
-build_tuic_inbound() {
-    local port="$1"
-    local uuid="$2"
-    local domain="$3"
-    local congestion="$4"
-    local tag="$5"
-
-    cat <<EOF
-    {
-      "type": "tuic",
-      "listen": "::",
-      "listen_port": ${port},
-      "tag": "${tag}",
-      "users": [
-        {
-          "uuid": "${uuid}",
-          "password": "${uuid}",
-          "name": "tuic-user"
-        }
-      ],
-      "congestion_control": "${congestion}",
+      "obfs": {
+        "type": "salamander",
+        "password": "${obfs_password}"
+      },
       "tls": {
         "enabled": true,
         "server_name": "${domain}",
@@ -525,24 +468,12 @@ generate_share_link() {
             local encoded_name=$(urlencode "$node_name")
             echo "vless://${encoded_uuid}@${server}:${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server_name}&fp=chrome&pbk=${public_key}&sid=${short_id}&type=tcp&headerType=none#${encoded_name}"
             ;;
-        "anytls")
-            local domain=$(echo "$extra" | cut -d'|' -f1)
-            local node_name="${name_prefix}AnyTLS-${port}"
-            local encoded_name=$(urlencode "$node_name")
-            echo "anytls://${encoded_uuid}@${server}:${port}?security=tls&sni=${domain}&allowInsecure=1#${encoded_name}"
-            ;;
         "hysteria2")
             local domain=$(echo "$extra" | cut -d'|' -f1)
+            local obfs_password=$(echo "$extra" | cut -d'|' -f2)
             local node_name="${name_prefix}Hysteria2-${port}"
             local encoded_name=$(urlencode "$node_name")
-            echo "hysteria2://${encoded_uuid}@${server}:${port}?sni=${domain}&alpn=h3&insecure=1#${encoded_name}"
-            ;;
-        "tuic")
-            local domain=$(echo "$extra" | cut -d'|' -f1)
-            local congestion=$(echo "$extra" | cut -d'|' -f2)
-            local node_name="${name_prefix}TUIC-${port}"
-            local encoded_name=$(urlencode "$node_name")
-            echo "tuic://${encoded_uuid}:${encoded_uuid}@${server}:${port}?sni=${domain}&congestion_control=${congestion}&alpn=h3&allow_insecure=1#${encoded_name}"
+            echo "hysteria2://${encoded_uuid}@${server}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}#${encoded_name}"
             ;;
     esac
 }
@@ -550,6 +481,9 @@ generate_share_link() {
 # Main function
 main() {
     log_step "Starting sing-box auto-deployment..."
+
+    # Force self-signed certificate
+    export LE_MODE="selfsigned"
 
     mkdir -p "${PERSIST_DIR}" 2>/dev/null || true
 
@@ -635,6 +569,11 @@ main() {
     if [[ "$ENABLE_REALITY" == "1" ]]; then
         log_step "Configuring VLESS-Reality-Vision..."
 
+        # Default to 443 if not set
+        if [[ -z "$REALITY_PORTS" ]]; then
+            REALITY_PORTS="443"
+        fi
+
         REALITY_PORT_LIST=$(parse_ports "$REALITY_PORTS" "reality" "$USED_PORTS")
         read -ra REALITY_PORTS_ARRAY <<< "$REALITY_PORT_LIST"
 
@@ -657,9 +596,9 @@ main() {
         done
     fi
 
-    # Process AnyTLS, Hysteria2, TUIC (require TLS certificate)
+    # Process Hysteria2 (require TLS certificate)
     NEED_CERT=0
-    if [[ "$ENABLE_ANYTLS" == "1" ]] || [[ "$ENABLE_HYSTERIA2" == "1" ]] || [[ "$ENABLE_TUIC" == "1" ]]; then
+    if [[ "$ENABLE_HYSTERIA2" == "1" ]]; then
         NEED_CERT=1
     fi
 
@@ -667,35 +606,17 @@ main() {
         obtain_certificate "$SSL_DOMAIN"
     fi
 
-    # Process AnyTLS protocol
-    if [[ "$ENABLE_ANYTLS" == "1" ]]; then
-        log_step "Configuring AnyTLS..."
-
-        ANYTLS_PORT_LIST=$(parse_ports "$ANYTLS_PORTS" "anytls" "$USED_PORTS")
-        read -ra ANYTLS_PORTS_ARRAY <<< "$ANYTLS_PORT_LIST"
-
-        for i in "${!ANYTLS_PORTS_ARRAY[@]}"; do
-            port="${ANYTLS_PORTS_ARRAY[$i]}"
-            USED_PORTS="$USED_PORTS $port"
-            tag="anytls-$i"
-
-            inbound=$(build_anytls_inbound "$port" "$UUID" "$SSL_DOMAIN" "$tag")
-
-            if [[ -n "$INBOUNDS" ]]; then
-                INBOUNDS="${INBOUNDS},"
-            fi
-            INBOUNDS="${INBOUNDS}${inbound}"
-
-            link=$(generate_share_link "anytls" "$PUBLIC_IP" "$port" "$UUID" "${SSL_DOMAIN}")
-            SHARE_LINKS="${SHARE_LINKS}\n${link}"
-
-            log_info "AnyTLS port ${port} configured"
-        done
-    fi
-
     # Process Hysteria2 protocol
     if [[ "$ENABLE_HYSTERIA2" == "1" ]]; then
         log_step "Configuring Hysteria2..."
+
+        # Default to 50000 if not set
+        if [[ -z "$HYSTERIA2_PORTS" ]]; then
+            HYSTERIA2_PORTS="50000"
+        fi
+
+        # Generate Obfs Password
+        HYSTERIA2_OBFS_PASSWORD=$(openssl rand -hex 16)
 
         HYSTERIA2_PORT_LIST=$(parse_ports "$HYSTERIA2_PORTS" "hysteria2" "$USED_PORTS")
         read -ra HYSTERIA2_PORTS_ARRAY <<< "$HYSTERIA2_PORT_LIST"
@@ -705,43 +626,27 @@ main() {
             USED_PORTS="$USED_PORTS $port"
             tag="hysteria2-$i"
 
-            inbound=$(build_hysteria2_inbound "$port" "$UUID" "$SSL_DOMAIN" "${HYSTERIA2_UP_MBPS:-100}" "${HYSTERIA2_DOWN_MBPS:-100}" "$tag")
+            inbound=$(build_hysteria2_inbound "$port" "$UUID" "$SSL_DOMAIN" "${HYSTERIA2_UP_MBPS:-100}" "${HYSTERIA2_DOWN_MBPS:-100}" "$HYSTERIA2_OBFS_PASSWORD" "$tag")
 
             if [[ -n "$INBOUNDS" ]]; then
                 INBOUNDS="${INBOUNDS},"
             fi
             INBOUNDS="${INBOUNDS}${inbound}"
 
-            link=$(generate_share_link "hysteria2" "$PUBLIC_IP" "$port" "$UUID" "${SSL_DOMAIN}")
+            link=$(generate_share_link "hysteria2" "$PUBLIC_IP" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}")
             SHARE_LINKS="${SHARE_LINKS}\n${link}"
 
             log_info "Hysteria2 port ${port} configured"
-        done
-    fi
-
-    # Process TUIC protocol
-    if [[ "$ENABLE_TUIC" == "1" ]]; then
-        log_step "Configuring TUIC V5..."
-
-        TUIC_PORT_LIST=$(parse_ports "$TUIC_PORTS" "tuic" "$USED_PORTS")
-        read -ra TUIC_PORTS_ARRAY <<< "$TUIC_PORT_LIST"
-
-        for i in "${!TUIC_PORTS_ARRAY[@]}"; do
-            port="${TUIC_PORTS_ARRAY[$i]}"
-            USED_PORTS="$USED_PORTS $port"
-            tag="tuic-$i"
-
-            inbound=$(build_tuic_inbound "$port" "$UUID" "$SSL_DOMAIN" "${TUIC_CONGESTION:-bbr}" "$tag")
-
-            if [[ -n "$INBOUNDS" ]]; then
-                INBOUNDS="${INBOUNDS},"
+            
+            # Add iptables rule for port hopping if port is 50000
+            if [[ "$port" == "50000" ]]; then
+                log_info "Setting up iptables for Hysteria2 port hopping (20000-45000 -> 50000)..."
+                if command -v iptables &> /dev/null; then
+                    iptables -t nat -A PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000 || log_warn "Failed to set iptables rule"
+                else
+                    log_warn "iptables not found, port hopping redirection might not work"
+                fi
             fi
-            INBOUNDS="${INBOUNDS}${inbound}"
-
-            link=$(generate_share_link "tuic" "$PUBLIC_IP" "$port" "$UUID" "${SSL_DOMAIN}|${TUIC_CONGESTION:-bbr}")
-            SHARE_LINKS="${SHARE_LINKS}\n${link}"
-
-            log_info "TUIC port ${port} configured"
         done
     fi
 
@@ -808,29 +713,15 @@ EOF
         echo ""
     fi
 
-    if [[ "$ENABLE_ANYTLS" == "1" ]]; then
-        echo "=== AnyTLS ==="
-        echo "Server: ${PUBLIC_IP}"
-        echo "SNI: ${TLS_DOMAIN}"
-        echo "Ports: ${ANYTLS_PORT_LIST}"
-        echo ""
-    fi
-
     if [[ "$ENABLE_HYSTERIA2" == "1" ]]; then
         echo "=== Hysteria2 ==="
         echo "Server: ${PUBLIC_IP}"
         echo "SNI: ${TLS_DOMAIN}"
         echo "Ports: ${HYSTERIA2_PORT_LIST}"
+        echo "Port Hopping: 20000-45000 -> 50000"
+        echo "Obfs: Salamander"
+        echo "Obfs Password: ${HYSTERIA2_OBFS_PASSWORD}"
         echo "Up/Down: ${HYSTERIA2_UP_MBPS:-100}/${HYSTERIA2_DOWN_MBPS:-100} Mbps"
-        echo ""
-    fi
-
-    if [[ "$ENABLE_TUIC" == "1" ]]; then
-        echo "=== TUIC V5 ==="
-        echo "Server: ${PUBLIC_IP}"
-        echo "SNI: ${TLS_DOMAIN}"
-        echo "Ports: ${TUIC_PORT_LIST}"
-        echo "Congestion: ${TUIC_CONGESTION:-bbr}"
         echo ""
     fi
 
@@ -856,7 +747,7 @@ EOF
   "deployed_at": "$(date -Iseconds)",
   "protocols": {
     "reality": {
-      "enabled": ${ENABLE_REALITY},
+      "enabled": ${ENABLE_REALITY:-0},
       "server": "${PUBLIC_IP}",
       "server_name": "${REALITY_SERVER_NAME}",
       "server_port": ${REALITY_SERVER_PORT:-443},
@@ -865,26 +756,15 @@ EOF
       "short_id": "${REALITY_SHORT_ID}",
       "ports": "${REALITY_PORT_LIST:-}"
     },
-    "anytls": {
-      "enabled": ${ENABLE_ANYTLS},
-      "server": "${PUBLIC_IP}",
-      "sni": "${TLS_DOMAIN}",
-      "ports": "${ANYTLS_PORT_LIST:-}"
-    },
     "hysteria2": {
-      "enabled": ${ENABLE_HYSTERIA2},
+      "enabled": ${ENABLE_HYSTERIA2:-0},
       "server": "${PUBLIC_IP}",
       "sni": "${TLS_DOMAIN}",
       "up_mbps": ${HYSTERIA2_UP_MBPS:-100},
       "down_mbps": ${HYSTERIA2_DOWN_MBPS:-100},
+      "obfs": "salamander",
+      "obfs_password": "${HYSTERIA2_OBFS_PASSWORD}",
       "ports": "${HYSTERIA2_PORT_LIST:-}"
-    },
-    "tuic": {
-      "enabled": ${ENABLE_TUIC},
-      "server": "${PUBLIC_IP}",
-      "sni": "${TLS_DOMAIN}",
-      "congestion": "${TUIC_CONGESTION:-bbr}",
-      "ports": "${TUIC_PORT_LIST:-}"
     }
   }
 }

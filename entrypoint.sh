@@ -99,23 +99,34 @@ generate_short_id() {
     openssl rand -hex 8
 }
 
-# Get public IP
-get_public_ip() {
+# Get public IPv4
+get_public_ipv4() {
     local ip=""
-    # Try IPv4 first
     ip=$(curl -4 -s --connect-timeout 5 http://ifconfig.me 2>/dev/null || \
          curl -4 -s --connect-timeout 5 http://ipinfo.io/ip 2>/dev/null || \
          curl -4 -s --connect-timeout 5 http://api.ipify.org 2>/dev/null || \
          curl -4 -s --connect-timeout 5 http://icanhazip.com 2>/dev/null || \
          echo "")
+    echo "$ip"
+}
 
+# Get public IPv6
+get_public_ipv6() {
+    local ip=""
+    ip=$(curl -6 -s --connect-timeout 5 http://ifconfig.me 2>/dev/null || \
+         curl -6 -s --connect-timeout 5 http://api64.ipify.org 2>/dev/null || \
+         curl -6 -s --connect-timeout 5 http://icanhazip.com 2>/dev/null || \
+         echo "")
+    echo "$ip"
+}
+
+# Get public IP (prefer IPv4)
+get_public_ip() {
+    local ip=""
+    ip=$(get_public_ipv4)
     if [[ -z "$ip" ]]; then
-        # Try IPv6
-        ip=$(curl -6 -s --connect-timeout 5 http://ifconfig.me 2>/dev/null || \
-             curl -6 -s --connect-timeout 5 http://api64.ipify.org 2>/dev/null || \
-             echo "")
+        ip=$(get_public_ipv6)
     fi
-
     echo "$ip"
 }
 
@@ -443,37 +454,48 @@ urlencode() {
 }
 
 # Generate client configuration link
+# Args: protocol, server, port, uuid, extra, suffix (optional, e.g. "-ipv6")
 generate_share_link() {
     local protocol="$1"
     local server="$2"
     local port="$3"
     local uuid="$4"
     local extra="$5"
+    local suffix="${6:-}"  # Optional suffix like "-ipv6"
 
     # URL encode the UUID for safety
     local encoded_uuid=$(urlencode "$uuid")
 
-    # Optional node name prefix (e.g. NAME_PREFIX=us1 -> us1-Reality-443)
-    local name_prefix="${NAME_PREFIX:-}"
-    if [[ -n "$name_prefix" && "$name_prefix" != *- ]]; then
-        name_prefix="${name_prefix}-"
-    fi
+    # Use hostname as node name prefix
+    local name_prefix="${NODE_NAME:-$(hostname 2>/dev/null || echo 'node')}"
+    # Clean up hostname (remove domain part if exists)
+    name_prefix="${name_prefix%%.*}"
 
     case "$protocol" in
         "reality")
             local server_name=$(echo "$extra" | cut -d'|' -f1)
             local public_key=$(echo "$extra" | cut -d'|' -f2)
             local short_id=$(echo "$extra" | cut -d'|' -f3)
-            local node_name="${name_prefix}Reality-${port}"
+            local node_name="${name_prefix}-Reality-${port}${suffix}"
             local encoded_name=$(urlencode "$node_name")
-            echo "vless://${encoded_uuid}@${server}:${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server_name}&fp=chrome&pbk=${public_key}&sid=${short_id}&type=tcp&headerType=none#${encoded_name}"
+            # For IPv6 server, wrap in brackets
+            local server_addr="$server"
+            if [[ "$server" == *":"* ]]; then
+                server_addr="[${server}]"
+            fi
+            echo "vless://${encoded_uuid}@${server_addr}:${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server_name}&fp=chrome&pbk=${public_key}&sid=${short_id}&type=tcp&headerType=none#${encoded_name}"
             ;;
         "hysteria2")
             local domain=$(echo "$extra" | cut -d'|' -f1)
             local obfs_password=$(echo "$extra" | cut -d'|' -f2)
-            local node_name="${name_prefix}Hysteria2-${port}"
+            local node_name="${name_prefix}-Hysteria2-${port}${suffix}"
             local encoded_name=$(urlencode "$node_name")
-            echo "hysteria2://${encoded_uuid}@${server}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}#${encoded_name}"
+            # For IPv6 server, wrap in brackets
+            local server_addr="$server"
+            if [[ "$server" == *":"* ]]; then
+                server_addr="[${server}]"
+            fi
+            echo "hysteria2://${encoded_uuid}@${server_addr}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}#${encoded_name}"
             ;;
     esac
 }
@@ -510,14 +532,38 @@ main() {
         fi
     fi
 
-    # Get public IP
+    # Get public IP (IPv4 and IPv6)
     log_step "Detecting public IP..."
-    PUBLIC_IP=$(get_public_ip)
-    if [[ -z "$PUBLIC_IP" ]]; then
-        log_error "Failed to detect public IP"
+    PUBLIC_IPV4=$(get_public_ipv4)
+    PUBLIC_IPV6=$(get_public_ipv6)
+    
+    if [[ -n "$PUBLIC_IPV4" ]]; then
+        log_info "Public IPv4: ${PUBLIC_IPV4}"
+    else
+        log_warn "No IPv4 address detected"
+    fi
+    
+    if [[ -n "$PUBLIC_IPV6" ]]; then
+        log_info "Public IPv6: ${PUBLIC_IPV6}"
+    else
+        log_warn "No IPv6 address detected"
+    fi
+    
+    # Use IPv4 as primary, fallback to IPv6
+    if [[ -n "$PUBLIC_IPV4" ]]; then
+        PUBLIC_IP="$PUBLIC_IPV4"
+    elif [[ -n "$PUBLIC_IPV6" ]]; then
+        PUBLIC_IP="$PUBLIC_IPV6"
+    else
+        log_error "Failed to detect any public IP"
         exit 1
     fi
-    log_info "Public IP: ${PUBLIC_IP}"
+    log_info "Primary IP: ${PUBLIC_IP}"
+    
+    # Get hostname for node naming
+    NODE_NAME="${NODE_NAME:-$(hostname 2>/dev/null || echo 'node')}"
+    NODE_NAME="${NODE_NAME%%.*}"  # Remove domain part
+    log_info "Node name: ${NODE_NAME}"
 
     # Determine TLS domain - use custom domain if provided, otherwise sslip.io
     if [[ -n "$CUSTOM_DOMAIN" ]]; then
@@ -589,8 +635,17 @@ main() {
             fi
             INBOUNDS="${INBOUNDS}${inbound}"
 
-            link=$(generate_share_link "reality" "$PUBLIC_IP" "$port" "$UUID" "${REALITY_SERVER_NAME}|${REALITY_PUBLIC_KEY}|${REALITY_SHORT_ID}")
-            SHARE_LINKS="${SHARE_LINKS}\n${link}"
+            # Generate IPv4 share link
+            if [[ -n "$PUBLIC_IPV4" ]]; then
+                link=$(generate_share_link "reality" "$PUBLIC_IPV4" "$port" "$UUID" "${REALITY_SERVER_NAME}|${REALITY_PUBLIC_KEY}|${REALITY_SHORT_ID}" "")
+                SHARE_LINKS="${SHARE_LINKS}\n${link}"
+            fi
+            
+            # Generate IPv6 share link with -ipv6 suffix
+            if [[ -n "$PUBLIC_IPV6" ]]; then
+                link_v6=$(generate_share_link "reality" "$PUBLIC_IPV6" "$port" "$UUID" "${REALITY_SERVER_NAME}|${REALITY_PUBLIC_KEY}|${REALITY_SHORT_ID}" "-ipv6")
+                SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
+            fi
 
             log_info "Reality port ${port} configured"
         done
@@ -633,8 +688,17 @@ main() {
             fi
             INBOUNDS="${INBOUNDS}${inbound}"
 
-            link=$(generate_share_link "hysteria2" "$PUBLIC_IP" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}")
-            SHARE_LINKS="${SHARE_LINKS}\n${link}"
+            # Generate IPv4 share link
+            if [[ -n "$PUBLIC_IPV4" ]]; then
+                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}" "")
+                SHARE_LINKS="${SHARE_LINKS}\n${link}"
+            fi
+            
+            # Generate IPv6 share link with -ipv6 suffix
+            if [[ -n "$PUBLIC_IPV6" ]]; then
+                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${SSL_DOMAIN}|${HYSTERIA2_OBFS_PASSWORD}" "-ipv6")
+                SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
+            fi
 
             log_info "Hysteria2 port ${port} configured"
             
@@ -694,7 +758,13 @@ EOF
     echo "         DEPLOYMENT COMPLETE"
     echo "=============================================="
     echo ""
-    echo "Server: ${PUBLIC_IP}"
+    echo "Node Name: ${NODE_NAME}"
+    if [[ -n "$PUBLIC_IPV4" ]]; then
+        echo "IPv4: ${PUBLIC_IPV4}"
+    fi
+    if [[ -n "$PUBLIC_IPV6" ]]; then
+        echo "IPv6: ${PUBLIC_IPV6}"
+    fi
     echo "UUID: ${UUID}"
     if [[ -n "$CUSTOM_DOMAIN" ]]; then
         echo "TLS Domain: ${TLS_DOMAIN} (custom)"
@@ -705,7 +775,12 @@ EOF
 
     if [[ "$ENABLE_REALITY" == "1" ]]; then
         echo "=== VLESS-Reality-Vision ==="
-        echo "Server: ${PUBLIC_IP}"
+        if [[ -n "$PUBLIC_IPV4" ]]; then
+            echo "Server (IPv4): ${PUBLIC_IPV4}"
+        fi
+        if [[ -n "$PUBLIC_IPV6" ]]; then
+            echo "Server (IPv6): ${PUBLIC_IPV6}"
+        fi
         echo "Server Name (SNI): ${REALITY_SERVER_NAME}"
         echo "Public Key: ${REALITY_PUBLIC_KEY}"
         echo "Short ID: ${REALITY_SHORT_ID}"
@@ -715,7 +790,12 @@ EOF
 
     if [[ "$ENABLE_HYSTERIA2" == "1" ]]; then
         echo "=== Hysteria2 ==="
-        echo "Server: ${PUBLIC_IP}"
+        if [[ -n "$PUBLIC_IPV4" ]]; then
+            echo "Server (IPv4): ${PUBLIC_IPV4}"
+        fi
+        if [[ -n "$PUBLIC_IPV6" ]]; then
+            echo "Server (IPv6): ${PUBLIC_IPV6}"
+        fi
         echo "SNI: ${TLS_DOMAIN}"
         echo "Ports: ${HYSTERIA2_PORT_LIST}"
         echo "Port Hopping: 20000-45000 -> 50000"
@@ -740,7 +820,9 @@ EOF
     log_step "Saving deployment information..."
         cat > "${PERSIST_INFO}" <<EOFINFO
 {
-  "server_ip": "${PUBLIC_IP}",
+  "node_name": "${NODE_NAME}",
+  "server_ipv4": "${PUBLIC_IPV4:-}",
+  "server_ipv6": "${PUBLIC_IPV6:-}",
   "tls_domain": "${TLS_DOMAIN}",
   "custom_domain": "${CUSTOM_DOMAIN:-}",
   "uuid": "${UUID}",
@@ -748,7 +830,8 @@ EOF
   "protocols": {
     "reality": {
       "enabled": ${ENABLE_REALITY:-0},
-      "server": "${PUBLIC_IP}",
+      "server_ipv4": "${PUBLIC_IPV4:-}",
+      "server_ipv6": "${PUBLIC_IPV6:-}",
       "server_name": "${REALITY_SERVER_NAME}",
       "server_port": ${REALITY_SERVER_PORT:-443},
       "public_key": "${REALITY_PUBLIC_KEY}",
@@ -758,7 +841,8 @@ EOF
     },
     "hysteria2": {
       "enabled": ${ENABLE_HYSTERIA2:-0},
-      "server": "${PUBLIC_IP}",
+      "server_ipv4": "${PUBLIC_IPV4:-}",
+      "server_ipv6": "${PUBLIC_IPV6:-}",
       "sni": "${TLS_DOMAIN}",
       "up_mbps": ${HYSTERIA2_UP_MBPS:-100},
       "down_mbps": ${HYSTERIA2_DOWN_MBPS:-100},

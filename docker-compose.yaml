@@ -31,8 +31,8 @@ services:
       - HYSTERIA2_PORTS=50000
 
       # Hysteria2 带宽 (Mbps)
-      - HYSTERIA2_UP_MBPS=100
-      - HYSTERIA2_DOWN_MBPS=100
+      - HYSTERIA2_UP_MBPS=${HYSTERIA2_UP_MBPS:-180}
+      - HYSTERIA2_DOWN_MBPS=${HYSTERIA2_DOWN_MBPS:-180}
 
       # Hysteria2 分享链接/混淆相关
       # SNI 默认用 www.bing.com（配合 insecure=1），可按需改为你的证书域名

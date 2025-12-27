@@ -488,6 +488,8 @@ generate_share_link() {
             local domain=$(echo "$extra" | cut -d'|' -f1)
             local obfs_password=$(echo "$extra" | cut -d'|' -f2)
             local ports=$(echo "$extra" | cut -d'|' -f3)
+            local up_mbps=$(echo "$extra" | cut -d'|' -f4)
+            local down_mbps=$(echo "$extra" | cut -d'|' -f5)
             
             local node_name="${name_prefix}-Hysteria2-${port}${suffix}"
             local encoded_name=$(urlencode "$node_name")
@@ -501,6 +503,12 @@ generate_share_link() {
             if [[ -n "$ports" ]]; then
                 link="${link}&mport=${ports}"
             fi
+            if [[ -n "$up_mbps" ]] && [[ "$up_mbps" =~ ^[0-9]+$ ]]; then
+                link="${link}&upmbps=${up_mbps}"
+            fi
+            if [[ -n "$down_mbps" ]] && [[ "$down_mbps" =~ ^[0-9]+$ ]]; then
+                link="${link}&downmbps=${down_mbps}"
+            fi
             echo "${link}#${encoded_name}"
             ;;
     esac
@@ -510,8 +518,10 @@ generate_share_link() {
 main() {
     log_step "Starting sing-box auto-deployment..."
 
-    # Force self-signed certificate
-    export LE_MODE="selfsigned"
+    # Respect external LE_MODE; default to selfsigned for backward compatibility
+    if [[ -z "${LE_MODE:-}" ]]; then
+        export LE_MODE="selfsigned"
+    fi
 
     mkdir -p "${PERSIST_DIR}" 2>/dev/null || true
 
@@ -679,6 +689,10 @@ main() {
         # Generate Obfs Password
         HYSTERIA2_OBFS_PASSWORD=$(openssl rand -hex 16)
 
+        # Defaults for share link behavior
+        HYSTERIA2_SNI="${HYSTERIA2_SNI:-www.bing.com}"
+        HYSTERIA2_EFFECTIVE_MPORT_RANGE=""
+
         HYSTERIA2_PORT_LIST=$(parse_ports "$HYSTERIA2_PORTS" "hysteria2" "$USED_PORTS")
         read -ra HYSTERIA2_PORTS_ARRAY <<< "$HYSTERIA2_PORT_LIST"
 
@@ -696,32 +710,52 @@ main() {
 
             # Determine port hopping range
             local hopping_ports=""
+            local hopping_ports_iptables=""
             if [[ "$port" == "50000" ]]; then
-                hopping_ports="20000-45000"
+                local configured_range="${HYSTERIA2_MPORT_RANGE:-}"
+                local default_range="20000-45000"
+
+                if [[ "$configured_range" == "0" ]] || [[ "$configured_range" == "disable" ]]; then
+                    hopping_ports=""
+                elif [[ -n "$configured_range" ]]; then
+                    if [[ "$configured_range" =~ ^[0-9]+-[0-9]+$ ]]; then
+                        hopping_ports="$configured_range"
+                    else
+                        log_warn "Invalid HYSTERIA2_MPORT_RANGE='${configured_range}' (expected like 20000-45000); falling back to ${default_range}"
+                        hopping_ports="$default_range"
+                    fi
+                else
+                    hopping_ports="$default_range"
+                fi
+
+                if [[ -n "$hopping_ports" ]]; then
+                    hopping_ports_iptables="${hopping_ports/-/:}"
+                    HYSTERIA2_EFFECTIVE_MPORT_RANGE="$hopping_ports"
+                fi
             fi
 
             # Generate IPv4 share link (use www.bing.com as SNI for Salamander obfs)
             if [[ -n "$PUBLIC_IPV4" ]]; then
-                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "www.bing.com|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "")
+                link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${HYSTERIA2_SNI}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}|${HYSTERIA2_UP_MBPS:-100}|${HYSTERIA2_DOWN_MBPS:-100}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
             
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
-                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "www.bing.com|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}" "-ipv6")
+                link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${HYSTERIA2_SNI}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}|${HYSTERIA2_UP_MBPS:-100}|${HYSTERIA2_DOWN_MBPS:-100}" "-ipv6")
                 SHARE_LINKS="${SHARE_LINKS}\n${link_v6}"
             fi
 
             log_info "Hysteria2 port ${port} configured"
             
-            # Add iptables rule for port hopping if port is 50000
-            if [[ "$port" == "50000" ]]; then
-                log_info "Setting up iptables for Hysteria2 port hopping (20000-45000 -> 50000)..."
+            # Add iptables rule for port hopping if enabled (port 50000)
+            if [[ "$port" == "50000" ]] && [[ -n "$hopping_ports_iptables" ]]; then
+                log_info "Setting up iptables for Hysteria2 port hopping (${hopping_ports} -> 50000)..."
                 if command -v iptables &> /dev/null; then
                     # Remove existing rule first to prevent duplicates (idempotency)
-                    iptables -t nat -D PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000 2>/dev/null || true
+                    iptables -t nat -D PREROUTING -p udp --dport "${hopping_ports_iptables}" -j REDIRECT --to-ports 50000 2>/dev/null || true
                     
-                    if iptables -t nat -A PREROUTING -p udp --dport 20000:45000 -j REDIRECT --to-ports 50000; then
+                    if iptables -t nat -A PREROUTING -p udp --dport "${hopping_ports_iptables}" -j REDIRECT --to-ports 50000; then
                         log_info "iptables rule added successfully"
                     else
                         log_warn "Failed to set iptables rule"
@@ -815,9 +849,13 @@ EOF
         if [[ -n "$PUBLIC_IPV6" ]]; then
             echo "Server (IPv6): ${PUBLIC_IPV6}"
         fi
-        echo "SNI: ${TLS_DOMAIN}"
+        echo "SNI: ${HYSTERIA2_SNI:-www.bing.com}"
         echo "Ports: ${HYSTERIA2_PORT_LIST}"
-        echo "Port Hopping: 20000-45000 -> 50000"
+        if [[ -n "${HYSTERIA2_EFFECTIVE_MPORT_RANGE:-}" ]]; then
+            echo "Port Hopping: ${HYSTERIA2_EFFECTIVE_MPORT_RANGE} -> 50000"
+        else
+            echo "Port Hopping: disabled"
+        fi
         echo "Obfs: Salamander"
         echo "Obfs Password: ${HYSTERIA2_OBFS_PASSWORD}"
         echo "Up/Down: ${HYSTERIA2_UP_MBPS:-100}/${HYSTERIA2_DOWN_MBPS:-100} Mbps"
@@ -862,7 +900,8 @@ EOF
       "enabled": ${ENABLE_HYSTERIA2:-0},
       "server_ipv4": "${PUBLIC_IPV4:-}",
       "server_ipv6": "${PUBLIC_IPV6:-}",
-      "sni": "${TLS_DOMAIN}",
+            "sni": "${HYSTERIA2_SNI:-www.bing.com}",
+            "mport_range": "${HYSTERIA2_EFFECTIVE_MPORT_RANGE:-}",
       "up_mbps": ${HYSTERIA2_UP_MBPS:-100},
       "down_mbps": ${HYSTERIA2_DOWN_MBPS:-100},
       "obfs": "salamander",

@@ -25,6 +25,8 @@ services:
       - ENABLE_ANYTLS=0
       - ENABLE_HYSTERIA2=1
       - ENABLE_TUIC=0
+      - TUIC_PORTS=50001
+      - TUIC_CONGESTION=bbr
       
       # 端口配置
       - REALITY_PORTS=443

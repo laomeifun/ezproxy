@@ -7,12 +7,12 @@
 - **多协议支持**：
   - ✅ **VLESS-Vision-uTLS-REALITY** (默认启用)
   - ✅ **Hysteria2** (默认启用)
-  - ✅ **TUIC V5** (新增支持)
+  - ✅ **TUIC V5** (新增)
   - ❌ AnyTLS (开发中)
 - **自动化配置**：
   - 自动生成 UUID 和密钥
   - 自动配置 SSL 证书 (自签名或 Let's Encrypt)
-  - **自动生成服务端与客户端全套配置**
+  - **自动生成全套客户端配置** (`client_config.json`)
   - 自动输出客户端分享链接
 - **内置优化路由**：
   - 默认开启广告过滤 (`category-ads-all`)
@@ -20,7 +20,7 @@
 
 ## 🚀 快速开始
 
-### 0. 新服务器一键安装（Debian/Ubuntu）
+### 0. 安装（Debian/Ubuntu）
 
 ```bash
 git clone https://github.com/laomeifun/ezproxy
@@ -28,7 +28,7 @@ cd ezproxy
 sudo bash install.sh
 ```
 
-### 1. 获取链接与配置
+### 1. 获取配置与链接
 
 首次启动后，可以通过以下命令查看分享链接：
 ```bash
@@ -64,8 +64,3 @@ environment:
 
 - `data/conf`: 存放配置文件 (`config.json`, `client_config.json`) 和分享链接 (`share_links.txt`)
 - `data/tls`: 存放证书文件
-
-## ⚠️ 注意事项
-
-- **端口放行**：如果手动配置了防火墙，请确保放行了对应的 TCP/UDP 端口。`install.sh` 脚本会自动尝试配置 UFW。
-- **UDP 优化**：Hysteria2 和 TUIC 依赖 UDP 性能，脚本会自动优化宿主机的 UDP 缓冲区。

@@ -490,7 +490,7 @@ generate_share_link() {
             local ports=$(echo "$extra" | cut -d'|' -f3)
             local up_mbps=$(echo "$extra" | cut -d'|' -f4)
             local down_mbps=$(echo "$extra" | cut -d'|' -f5)
-            
+
             local node_name="${name_prefix}-Hysteria2-${port}${suffix}"
             local encoded_name=$(urlencode "$node_name")
             # For IPv6 server, wrap in brackets
@@ -498,7 +498,7 @@ generate_share_link() {
             if [[ "$server" == *":"* ]]; then
                 server_addr="[${server}]"
             fi
-            
+
             local link="hysteria2://${encoded_uuid}@${server_addr}:${port}?sni=${domain}&alpn=h3&insecure=1&obfs=salamander&obfs-password=${obfs_password}"
             if [[ -n "$ports" ]]; then
                 link="${link}&mport=${ports}"
@@ -552,19 +552,19 @@ main() {
     log_step "Detecting public IP..."
     PUBLIC_IPV4=$(get_public_ipv4)
     PUBLIC_IPV6=$(get_public_ipv6)
-    
+
     if [[ -n "$PUBLIC_IPV4" ]]; then
         log_info "Public IPv4: ${PUBLIC_IPV4}"
     else
         log_warn "No IPv4 address detected"
     fi
-    
+
     if [[ -n "$PUBLIC_IPV6" ]]; then
         log_info "Public IPv6: ${PUBLIC_IPV6}"
     else
         log_warn "No IPv6 address detected"
     fi
-    
+
     # Use IPv4 as primary, fallback to IPv6
     if [[ -n "$PUBLIC_IPV4" ]]; then
         PUBLIC_IP="$PUBLIC_IPV4"
@@ -575,7 +575,7 @@ main() {
         exit 1
     fi
     log_info "Primary IP: ${PUBLIC_IP}"
-    
+
     # Get hostname for node naming
     NODE_NAME="${NODE_NAME:-$(hostname 2>/dev/null || echo 'node')}"
     NODE_NAME="${NODE_NAME%%.*}"  # Remove domain part
@@ -656,7 +656,7 @@ main() {
                 link=$(generate_share_link "reality" "$PUBLIC_IPV4" "$port" "$UUID" "${REALITY_SERVER_NAME}|${REALITY_PUBLIC_KEY}|${REALITY_SHORT_ID}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
-            
+
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
                 link_v6=$(generate_share_link "reality" "$PUBLIC_IPV6" "$port" "$UUID" "${REALITY_SERVER_NAME}|${REALITY_PUBLIC_KEY}|${REALITY_SHORT_ID}" "-ipv6")
@@ -739,7 +739,7 @@ main() {
                 link=$(generate_share_link "hysteria2" "$PUBLIC_IPV4" "$port" "$UUID" "${HYSTERIA2_SNI}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}|${HYSTERIA2_UP_MBPS:-100}|${HYSTERIA2_DOWN_MBPS:-100}" "")
                 SHARE_LINKS="${SHARE_LINKS}\n${link}"
             fi
-            
+
             # Generate IPv6 share link with -ipv6 suffix
             if [[ -n "$PUBLIC_IPV6" ]]; then
                 link_v6=$(generate_share_link "hysteria2" "$PUBLIC_IPV6" "$port" "$UUID" "${HYSTERIA2_SNI}|${HYSTERIA2_OBFS_PASSWORD}|${hopping_ports}|${HYSTERIA2_UP_MBPS:-100}|${HYSTERIA2_DOWN_MBPS:-100}" "-ipv6")
@@ -747,14 +747,14 @@ main() {
             fi
 
             log_info "Hysteria2 port ${port} configured"
-            
+
             # Add iptables rule for port hopping if enabled (port 50000)
             if [[ "$port" == "50000" ]] && [[ -n "$hopping_ports_iptables" ]]; then
                 log_info "Setting up iptables for Hysteria2 port hopping (${hopping_ports} -> 50000)..."
                 if command -v iptables &> /dev/null; then
                     # Remove existing rule first to prevent duplicates (idempotency)
                     iptables -t nat -D PREROUTING -p udp --dport "${hopping_ports_iptables}" -j REDIRECT --to-ports 50000 2>/dev/null || true
-                    
+
                     if iptables -t nat -A PREROUTING -p udp --dport "${hopping_ports_iptables}" -j REDIRECT --to-ports 50000; then
                         log_info "iptables rule added successfully"
                     else

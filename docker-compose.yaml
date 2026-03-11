@@ -4,7 +4,7 @@ services:
     container_name: ezproxy
     restart: unless-stopped
     
-    # 使用 host 模式以便处理大量端口跳跃 (20000-45000)
+    # 使用 host 模式以便处理大量端口映射
     network_mode: host
     
     # 需要 NET_ADMIN 权限来执行 iptables 端口转发
@@ -17,28 +17,28 @@ services:
       - ./data/tls:/etc/sing-box/tls
 
     environment:
-      # 强制使用自签名证书 (配合混淆使用)
+      # 证书模式: selfsigned (默认), letsencrypt, auto
       - LE_MODE=selfsigned
       
-      # 协议开关
+      # 协议开关 (1=启用, 0=禁用)
       - ENABLE_REALITY=1
-      - ENABLE_ANYTLS=0
       - ENABLE_HYSTERIA2=1
       - ENABLE_TUIC=0
       
-      # 端口配置
+      # 端口配置 (支持逗号分隔, 如 443,8443)
       - REALITY_PORTS=443
       - HYSTERIA2_PORTS=50000
+      - TUIC_PORTS=50001
 
-      # Hysteria2 带宽 (Mbps)
-      - HYSTERIA2_UP_MBPS=${HYSTERIA2_UP_MBPS:-180}
-      - HYSTERIA2_DOWN_MBPS=${HYSTERIA2_DOWN_MBPS:-180}
+      # 传输性能设置
+      - HYSTERIA2_UP_MBPS=180
+      - HYSTERIA2_DOWN_MBPS=180
+      - TUIC_CONGESTION=bbr
 
       # Hysteria2 分享链接/混淆相关
-      # SNI 默认用 www.bing.com（配合 insecure=1），可按需改为你的证书域名
       - HYSTERIA2_SNI=www.bing.com
-      # 端口跳跃范围：格式 20000-45000；设为 0 或 disable 可关闭（仅对主端口 50000 生效）
+      # 端口跳跃范围：格式 20000-45000；设为 0 或 disable 可关闭
       - HYSTERIA2_MPORT_RANGE=
       
-      # 复用配置 (防止重启后 UUID 变化)
+      # 复用配置 (1=复用, 0=重置)
       - REUSE_CONFIG=1
